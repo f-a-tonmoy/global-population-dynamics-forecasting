@@ -1,0 +1,612 @@
+---
+title: "World Population Data - HT & Modeling"
+author: "Fahim Ahamed"
+date: "2025-11-25"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'E:/CCNY/DSE I1030 - Applied Statistics/Project 1')
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(leaps)
+library(MASS)
+library(patchwork)
+library(flextable)
+```
+
+```{r}
+data <- read.csv("data/cleaned_data.csv", header = TRUE, sep = ",")
+data <- data[ , -1]
+colnames(data)
+```
+```{r}
+#view(data)
+```
+
+
+```{r}
+ggplot(
+  data, aes(x = IncomeGroup, y = Migration_Rate, fill = IncomeGroup)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_y_continuous(limits = c(-0.02, 0.02)) +
+  xlab("Income Group") +
+  ylab("Net Migration Rate") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+## Hypothesis testing
+
+The boxplot of Net Migtation per Income Group shows that the Net Migration (on average) is higher for High Income group then for all other Income Groups. We can use the Hypothesis Testing framework to statistically verify our visual observations.
+
+```{r}
+High_Inc <- subset(data, IncomeGroup == "High income")
+Up_Mid_Inc <- subset(data, IncomeGroup == "Upper middle income")
+
+t.test(High_Inc$Migration_Rate, Up_Mid_Inc$Migration_Rate, alternative = "greater", var.equal = FALSE)
+```
+
+The test shows that High-Income countries have clearly higher migration rates than Upper-Middle-Income countries. The extremely small p-value indicates this difference is statistically significant, meaning High-Income countries generally gain more people through migration, while Upper-Middle-Income countries tend to lose people.
+
+## Linear Model for Instantaneous Rate
+
+```{r}
+data$IncomeGroup <- as.factor(data$IncomeGroup)
+data$Region <- as.factor(data$Region)
+
+data <- data %>%
+  group_by(Name) %>%
+  arrange(Name, Year) %>%
+  mutate(
+    R_inst = log(Lambda)  #Lambda = Population/lag(Population)
+  ) %>%
+  ungroup()
+```
+
+```{r}
+linear_model <- lm(
+  R_inst ~ BirthRate + DeathRate + Migration_Rate + IncomeGroup + Region,
+  data = data
+)
+
+summary(linear_model)
+```
+
+The model shows that population growth mainly depends on birth rates, death rates, and migration. Growth increases when birth rates or migration are higher and decreases when death rates are higher. Lower-income countries tend to grow more slowly than high-income countries even after accounting for these factors. Some regions, including the Middle East and North Africa, South Asia, and Sub-Saharan Africa, grow faster than the reference region, while Europe and North America show no major differences. Overall, the model explains about 73 percent of the differences in growth across countries and years.
+
+```{r}
+data$R_inst_hat <- predict(linear_model, newdata = data)
+
+data <- data %>%
+  arrange(Name, Year) %>%
+  group_by(Name) %>%
+  mutate(Pop_Pred_linear = Population * exp(R_inst_hat))
+```
+
+```{r}
+colnames(data)
+```
+
+
+```{r fig.width=12, fig.height=6}
+pop_compare <- data %>%
+  group_by(Year) %>%
+  summarise(
+    Actual = sum(Population, na.rm = TRUE),
+    Predicted = sum(Pop_Pred_linear, na.rm = TRUE)
+  )
+
+ggplot(pop_compare, aes(x = Year)) +
+  geom_line(aes(y = Actual / 1e9, color = 'Actual'), linewidth = 0.75) +
+  geom_line(aes(y = Predicted / 1e9, color = 'Predicted'), linewidth = 0.75) +
+  labs(
+    title = 'Actual vs Predicted Global Population Over Time (Linear Model)',
+    x = 'Year',
+    y = 'Population (billions)',
+    color = ''
+  ) +
+  scale_color_manual(values = c('Actual' = 'steelblue', 'Predicted' = 'red')) +
+  theme_minimal()
+```
+
+The model’s predicted global population closely tracks the actual global population over time. The predicted line is almost identical to the actual line, which indicates that the linear model captures the long-term growth pattern very well. The model slightly overestimates population in most years, but the overall trend, slope, and shape match the real data closely. This suggests that the demographic variables used in the model provide strong predictive power for aggregate global population growth.
+
+```{r fig.width=11, fig.height=5}
+par(mfrow = c(2, 2))
+plot(linear_model)
+title("Diagnostic Plots for Linear Model", outer = TRUE, line = -1)
+par(mfrow = c(1, 1))
+```
+
+
+## Extended Linear Model for Instantaneous Rate
+
+```{r}
+extended_linear_model <- lm(
+  R_inst ~ (BirthRate + DeathRate + Migration_Rate) * (IncomeGroup + Region),
+  data = data
+)
+
+summary(extended_linear_model)
+```
+
+The extended model improves fit compared to the simpler linear model. The R-squared increases from about 0.73 to 0.755, indicating that allowing birth rates, death rates, and migration to interact with IncomeGroup and Region explains additional variation in instantaneous growth rates. Many interaction terms are statistically significant, which means the effect of demographic variables varies across income levels and regions. 
+
+Overall, the extended model captures more nuanced demographic relationships and provides a better explanation of cross-country growth patterns.
+
+```{r}
+data$R_inst_ext_hat <- predict(extended_linear_model, newdata = data)
+
+data <- data %>%
+  arrange(Name, Year) %>%
+  group_by(Name) %>%
+  mutate(
+    Pop_Pred_ext    = Population * exp(R_inst_ext_hat)
+  ) %>%
+  ungroup()
+
+pop_compare <- data %>%
+  group_by(Year) %>%
+  summarise(
+    Actual       = sum(Population, na.rm = TRUE),
+    Linear_Pred  = sum(Pop_Pred_linear, na.rm = TRUE),
+    Ext_Pred     = sum(Pop_Pred_ext, na.rm = TRUE)
+  )
+```
+
+```{r fig.width=10, fig.height=6}
+ggplot(pop_compare, aes(x = Year)) +
+  geom_line(aes(y = Actual / 1e9, color = 'Actual', linetype = 'Actual'), linewidth = 1, alpha=0.75) +
+  geom_line(aes(y = Linear_Pred / 1e9, color = 'Linear Model',linetype = 'Linear Model'),linewidth = 1, alpha=0.75) +
+  geom_line(aes(y = Ext_Pred / 1e9, color = 'Extended Model',linetype = 'Extended Model'),linewidth = 1.5, alpha=0.75) +
+  labs(
+    title = 'Actual vs Predicted Global Population: Linear vs Extended Model',
+    x = 'Year',
+    y = 'Population (billions)',
+    color = '',
+    linetype = ''
+  ) +
+  scale_color_manual(values = c('Actual' = 'steelblue','Linear Model' = 'red','Extended Model' = 'darkgreen')) +
+  scale_linetype_manual(values = c('Actual' = 'solid','Linear Model' = 'dashed','Extended Model' = 'dotted')) +
+  theme_minimal()
+```
+
+```{r fig.width=11, fig.height=5}
+par(mfrow = c(2, 2))
+plot(extended_linear_model)
+title("Diagnostic Plots for Extended Linear Model", outer = TRUE, line = -1)
+par(mfrow = c(1, 1))
+```
+
+
+## Subset Selection From The Extended Linear Model
+
+```{r}
+subset_data <- data %>%
+  dplyr::select(
+    R_inst,
+    BirthRate,
+    DeathRate,
+    Migration_Rate,
+    IncomeGroup,
+    Region
+  ) %>%
+  na.omit()
+```
+
+
+```{r}
+subset_fit <- regsubsets(
+  R_inst ~ (BirthRate + DeathRate + Migration_Rate) * (IncomeGroup + Region),
+  data = subset_data,
+  nvmax = NULL
+)
+
+subset_summary <- summary(subset_fit)
+```
+
+
+```{r fig.width=14, fig.height=6}
+df_subset <- tibble(
+  num_vars = 1:length(subset_summary$cp),
+  cp       = subset_summary$cp,
+  bic      = subset_summary$bic,
+  adjr2    = subset_summary$adjr2
+)
+
+p1 <- ggplot(df_subset, aes(x = num_vars, y = cp)) +
+  geom_line(color = 'steelblue') +
+  geom_point() +
+  geom_point(aes(x = which.min(cp), y = min(cp)), color = 'red', size = 3) +
+  labs(
+    title = 'Cp Statistic',
+    x = 'Number of Variables',
+    y = 'Cp'
+  ) +
+  theme_minimal()
+
+p2 <- ggplot(df_subset, aes(x = num_vars, y = bic)) +
+  geom_line(color = 'darkgreen') +
+  geom_point() +
+  geom_point(aes(x = which.min(bic), y = min(bic)), color = 'red', size = 3) +
+  labs(
+    title = 'BIC Statistic',
+    x = 'Number of Variables',
+    y = 'BIC'
+  ) +
+  theme_minimal()
+
+p3 <- ggplot(df_subset, aes(x = num_vars, y = adjr2)) +
+  geom_line(color = 'purple') +
+  geom_point() +
+  geom_point(aes(x = which.max(adjr2), y = max(adjr2)), color = 'red', size = 3) +
+  labs(
+    title = 'Adjusted R²',
+    x = 'Number of Variables',
+    y = 'Adjusted R²'
+  ) +
+  theme_minimal()
+
+p1 + p2 + p3
+```
+
+The plots show that adding more variables improves the model at first, but after a certain point, the improvement becomes very small. Cp and BIC both point to a model in the middle range as the best choice, rather than the smallest or largest model. Adjusted R² rises quickly at the beginning and then stays almost flat, meaning extra variables add very little. Overall, a medium-sized model seems to capture most of the useful information without unnecessary complexity.
+
+```{r}
+best_bic_index <- which.min(subset_summary$bic)
+
+selected <- subset_summary$which[best_bic_index, ]
+
+selected_vars <- names(selected[selected == TRUE])
+selected_vars <- selected_vars[selected_vars != "(Intercept)"]
+
+selected_vars
+```
+
+```{r}
+summary(extended_linear_model)
+```
+
+
+# Forward and Backward Stepwise Selection
+
+```{r}
+backward_model <- stepAIC(
+  extended_linear_model,
+  direction = "backward",
+)
+```
+
+```{r}
+extended_terms <- attr(terms(extended_linear_model), "term.labels")
+backward_terms <- attr(terms(backward_model), "term.labels")
+
+kept_terms <- backward_terms
+removed_terms <- setdiff(extended_terms, backward_terms)
+
+cat("Kept Terms:\n")
+print(kept_terms)
+
+cat("\nRemoved Terms:\n")
+print(removed_terms)
+```
+
+```{r}
+model_comparison <- data.frame(
+  Model = c("Extended Model", "Backward Stepwise Model"),
+  AIC = c(AIC(extended_linear_model), AIC(backward_model)),
+  BIC = c(BIC(extended_linear_model), BIC(backward_model)),
+  Adj_R2 = c(summary(extended_linear_model)$adj.r.squared,
+             summary(backward_model)$adj.r.squared)
+)
+
+flextable(model_comparison)
+```
+
+Backward stepwise selection retained all main effects and interaction terms from the extended model, indicating that each component provides information useful for predicting instantaneous growth. This suggests that regional and income-group differences meaningfully modify the effects of birth, death, and migration rates.
+
+```{r}
+null_model <- lm(R_inst ~ 1, data = data)
+
+forward_model <- stepAIC(
+  null_model,
+  scope = list(lower = null_model,
+               upper = extended_linear_model),
+  direction = "forward",
+)
+```
+
+```{r}
+extended_terms <- attr(terms(extended_linear_model), "term.labels")
+forward_terms <- attr(terms(forward_model), "term.labels")
+
+kept_forward <- forward_terms
+removed_forward <- setdiff(extended_terms, forward_terms)
+
+cat("Kept Terms (Forward Selection):\n")
+print(kept_forward)
+
+cat("\nRemoved Terms (Forward Selection):\n")
+print(removed_forward)
+```
+
+```{r}
+model_metrics <- data.frame(
+  Model = c("Extended Model", 
+            "Backward Stepwise", 
+            "Forward Stepwise"),
+  
+  AIC = c(AIC(extended_linear_model),
+          AIC(backward_model),
+          AIC(forward_model)),
+  
+  BIC = c(BIC(extended_linear_model),
+          BIC(backward_model),
+          BIC(forward_model)),
+  
+  Adj_R2 = c(summary(extended_linear_model)$adj.r.squared,
+             summary(backward_model)$adj.r.squared,
+             summary(forward_model)$adj.r.squared)
+)
+
+model_metrics <- model_metrics %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+flextable(model_metrics)
+```
+
+```{r}
+base_year <- 2023
+forecast_year <- 2028
+h <- forecast_year - base_year
+
+base_data <- data %>% filter(Year == base_year)
+
+base_data$IncomeGroup <- factor(base_data$IncomeGroup, levels = levels(data$IncomeGroup))
+base_data$Region <- factor(base_data$Region, levels = levels(data$Region))
+
+base_data$r_pred_t_plus_h <- predict(extended_linear_model, newdata = base_data)
+options(scipen = 999)
+base_data$Pop_2028 <- base_data$Population * exp(base_data$r_pred_t_plus_h)
+
+forecast_final <- base_data %>%
+  dplyr::select(
+    Name,
+    Code,
+    Region,
+    IncomeGroup,
+    Population_2023 = Population,
+    r_pred_2028 = r_pred_t_plus_h,
+    Population_2028 = Pop_2028
+  )
+
+forecast_final
+```
+
+
+```{r}
+years <- 2023:2028
+
+forecast_data <- base_data %>%
+  dplyr::select(Name, Region, IncomeGroup, Population_2023 = Population,
+         BirthRate, DeathRate, Migration_Rate)
+
+forecast_data$Pop <- forecast_data$Population_2023
+
+base_total <- sum(base_data$Population, na.rm = TRUE)
+
+year_results <- data.frame()
+
+for (yr in years[-1]) {
+  r_pred <- predict(extended_linear_model, newdata = forecast_data)
+  forecast_data$Pop <- forecast_data$Pop * exp(r_pred)
+
+  total_pop <- sum(forecast_data$Pop, na.rm = TRUE)
+  diff_val <- total_pop - base_total
+  pct_val <- (diff_val / base_total) * 100
+
+  year_results <- rbind(
+    year_results,
+    data.frame(
+      `Base_Year` = '2023',
+      `Population_Billion` = round(base_total / 1e9, 3),
+      `Target_Year` = as.character(yr),
+      `TY_Pop_Billion` = round(total_pop / 1e9, 3),
+      `Difference_Million` = round(diff_val / 1e6, 1),
+      `Growth_Pct` = round(pct_val, 2)
+    )
+  )
+}
+
+flextable(year_results)
+```
+
+```{r}
+year_results
+```
+
+
+```{r}
+world_pop <- data %>%
+  group_by(Year) %>%
+  summarize(World_Pop = sum(Population, na.rm = TRUE)) %>%
+  ungroup()
+
+world_pop$World_Pop <- round(world_pop$World_Pop / 1e9, 3)
+
+forecast_df <- year_results %>%
+  mutate(
+    Year = as.numeric(Target_Year),
+    World_Pop = TY_Pop_Billion
+  ) %>%
+  dplyr::select(Year, World_Pop)
+
+world_pop_extended <- world_pop %>%
+  bind_rows(forecast_df) %>%
+  arrange(Year)
+```
+```{r}
+world_pop_extended <- world_pop_extended %>%
+  mutate(
+    Type = ifelse(Year <= 2023, 'Historical', 'Projected')
+  )
+
+ggplot(world_pop_extended, aes(x = Year, y = World_Pop, color = Type)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 2023.5, linetype = "dashed", color = "black") +
+  scale_x_continuous(breaks = seq(1960, 2030, 10), limits = c(1960, 2030)) +
+  scale_color_manual(values = c('Historical' = 'steelblue', 'Projected' = 'red')) +
+  labs(
+    title = 'World Population (1961-2028)',
+    x = 'Year',
+    y = 'Population (Billions)',
+    color = ''
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 13, face = 'bold'),
+    legend.position = 'top'
+  )
+```
+
+# Rolling Window Cross-Validation
+
+```{r}
+fit_extended_model <- function(train_data) {
+  lm(
+    R_inst ~ (BirthRate + DeathRate + Migration_Rate) * (IncomeGroup + Region),
+    data = train_data
+  )
+}
+
+forecast_population <- function(N_launch, r_pred) {
+  N_launch * exp(r_pred)
+}
+```
+
+```{r}
+horizons <- c(1, 3, 5, 7, 9)
+
+min_year <- min(data$Year, na.rm = TRUE)
+max_year <- max(data$Year, na.rm = TRUE)
+
+all_errors <- list()
+
+for (h in horizons) {
+  
+  horizon_errors <- list()
+  idx <- 1
+  
+  for (launch_year in seq(min_year, max_year - h)) {
+    
+    train_data <- data %>%
+      filter(Year <= launch_year & !is.na(R_inst))
+    
+    model <- fit_extended_model(train_data)
+    
+    launch_df <- data %>% filter(Year == launch_year)
+    
+    target_df <- data %>%
+      filter(Year == launch_year + h) %>%
+      dplyr::select(Code, Population)
+    
+    merged <- merge(
+      launch_df, target_df,
+      by = "Code",
+      suffixes = c("_launch", "_target")
+    )
+    
+    r_pred <- predict(model, newdata = merged)
+    N_forecast <- forecast_population(merged$Population_launch, r_pred)
+    
+    PE <- (N_forecast - merged$Population_target) / merged$Population_target * 100
+    
+    horizon_errors[[idx]] <- data.frame(
+      h = h,
+      launch_year = launch_year,
+      target_year = launch_year + h,
+      Code = merged$Code,
+      Name = merged$Name,
+      PE = PE
+    )
+    
+    idx <- idx + 1
+  }
+  
+  all_errors[[as.character(h)]] <- bind_rows(horizon_errors)
+}
+```
+
+```{r}
+cv_errors <- bind_rows(all_errors)
+
+cv_summary <- cv_errors %>%
+  group_by(h) %>%
+  summarise(
+    n = n(),
+    MAPE = mean(abs(PE), na.rm = TRUE),
+    MALPE = mean(PE, na.rm = TRUE)
+  )
+flextable(cv_summary)
+```
+```{r fig.width=8, fig.height=4}
+p1 <- ggplot(cv_summary, aes(x = h, y = MAPE)) +
+  geom_line(linewidth = 1, color = 'steelblue') +
+  geom_point(size = 3, color = 'steelblue') +
+  scale_x_continuous(breaks = c(1, 3, 5, 7, 9)) +
+  labs(
+    title = 'MAPE vs Forecast Horizon',
+    x = 'Horizon (years)',
+    y = 'MAPE'
+  ) +
+  theme_minimal()
+
+p2 <- ggplot(cv_summary, aes(x = h, y = MALPE)) +
+  geom_line(linewidth = 1, color = 'firebrick') +
+  geom_point(size = 3, color = 'firebrick') +
+  scale_x_continuous(breaks = c(1, 3, 5, 7, 9)) +
+  labs(
+    title = 'MALPE vs Forecast Horizon',
+    x = 'Horizon (years)',
+    y = 'MALPE'
+  ) +
+  theme_minimal()
+
+p1 + p2
+```
+
+
+```{r}
+ggplot(cv_errors, aes(x = PE, color = factor(h))) +
+  geom_density(linewidth = 1) +
+  facet_wrap(~ h, scales = 'free') +
+  labs(
+    title = 'Distribution of PE for each Horizon',
+    x = 'Percent Error (PE)',
+    y = 'Density'
+  ) +
+  theme_minimal()
+```
+
+```{r fig.width=8, fig.height=5}
+ggplot(cv_errors, aes(x = PE, fill = factor(h))) +
+  geom_histogram(bins = 60, alpha = 0.6, position = 'identity') +
+  labs(
+    title = 'Histogram of Forecast Percent Errors (PE)',
+    x = 'Percent Error (PE)',
+    y = 'Count',
+    fill = 'Horizon (h)'
+  ) +
+  theme_minimal()
+```
+
+
