@@ -158,4 +158,23 @@ A strong linear relationship was observed between instantaneous growth rates and
 
 ## 📄 Report
 
-A detailed written report with figures, methodology, and validation results is included in this repository. :contentReference[oaicite:0]{index=0}
+A detailed written report with figures, methodology, and validation results is included in this repository.
+
+## ▶️ How to Run
+
+### Prerequisites
+- R (version 4.0 or later)
+- RStudio (recommended)
+
+### Install Required Packages
+
+Install the required R packages if they are not already installed:
+
+```r
+install.packages(c(
+  'tidyverse',
+  'ggplot2',
+  'caret',
+  'leaps'
+))
+```
