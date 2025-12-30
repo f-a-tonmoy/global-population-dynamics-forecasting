@@ -110,7 +110,7 @@ A strong linear relationship was observed between instantaneous growth rates and
 
 ## 🔮 Population Forecasting
 
-### Global Forecast (2024–2028)
+### Global Forecast (2024-2028)
 - Projected world population increases from:
   - **7.88 billion (2023)** → **8.24 billion (2028)**
 - Total increase of approximately **358 million people** over five years
