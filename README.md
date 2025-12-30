@@ -168,7 +168,7 @@ A detailed written report with figures, methodology, and validation results is i
 
 ### Clone the Repository
 ```bash
-git clone https://github.com/<your-username>/global-population-dynamics-forecasting.git
+git clone https://github.com/f-a-tonmoy/global-population-dynamics-forecasting.git
 cd global-population-dynamics-forecasting
 ```
 
@@ -188,7 +188,7 @@ install.packages(c(
 ### Run the Project
 
 1. **Open the project in RStudio**
-   - Open R Markdown file(s)
+   - Open the R Markdown file(s)
 
 2. **Execute the analysis**
    - Run the scripts sequentially, or  
