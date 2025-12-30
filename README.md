@@ -166,6 +166,12 @@ A detailed written report with figures, methodology, and validation results is i
 - R (version 4.0 or later)
 - RStudio (recommended)
 
+### Clone the Repository
+```bash
+git clone https://github.com/<your-username>/global-population-dynamics-forecasting.git
+cd global-population-dynamics-forecasting
+```
+
 ### Install Required Packages
 
 Install the required R packages if they are not already installed:
@@ -178,3 +184,16 @@ install.packages(c(
   'leaps'
 ))
 ```
+
+### Run the Project
+
+1. **Open the project in RStudio**
+   - Open R Markdown file(s)
+
+2. **Execute the analysis**
+   - Run the scripts sequentially, or  
+   - Knit the primary R Markdown file to reproduce the full analysis, figures, and tables
+
+3. **View results**
+   - Plots and tables will appear in the RStudio Viewer  
+   - Forecast outputs and diagnostics are included in the rendered report
